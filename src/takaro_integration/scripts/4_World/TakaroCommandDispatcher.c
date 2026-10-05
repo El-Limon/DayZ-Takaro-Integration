@@ -264,7 +264,7 @@ class TakaroCommandDispatcher
             ResultPlayerInfo info = new ResultPlayerInfo();
             info.gameId = id.GetPlainId();
             info.name = TakaroNameCache.Resolve(id.GetPlainId(), id.GetName());
-            info.steamId = id.GetPlainId();
+            if (TakaroEventFactory.IsSteamId64(id.GetPlainId())) info.steamId = id.GetPlainId();
             info.platformId = BuildPlatformId(id);
             info.ping = id.GetPingAct();
             info.online = true;
@@ -299,7 +299,7 @@ class TakaroCommandDispatcher
         ResultPlayerInfo info = new ResultPlayerInfo();
         info.gameId = id.GetPlainId();
         info.name = TakaroNameCache.Resolve(id.GetPlainId(), id.GetName());
-        info.steamId = id.GetPlainId();
+        if (TakaroEventFactory.IsSteamId64(id.GetPlainId())) info.steamId = id.GetPlainId();
         info.platformId = BuildPlatformId(id);
         info.ping = id.GetPingAct();
         info.online = true;
