@@ -289,8 +289,8 @@ class TakaroCommandDispatcher
             string cachedName = TakaroNameCache.Resolve(args.gameId, "");
             if (cachedName == "") cachedName = args.gameId;
             offline.name = cachedName;
-            offline.steamId = args.gameId;
-            offline.platformId = "steam:" + args.gameId;
+            if (TakaroEventFactory.IsSteamId64(args.gameId)) offline.steamId = args.gameId;
+            offline.platformId = TakaroEventFactory.PlatformIdFor(args.gameId, "");
             offline.ping = 0;
             offline.online = false;
             ReplyOk(op, SerializePlayerInfo(offline));
@@ -1400,10 +1400,7 @@ class TakaroCommandDispatcher
     string BuildPlatformId(PlayerIdentity id)
     {
         if (!id) return "";
-        string bisid = id.GetId();
-        int eqIdx = bisid.IndexOf("=");
-        if (eqIdx >= 0) bisid = bisid.Substring(0, eqIdx);
-        return "dayz:" + bisid;
+        return TakaroEventFactory.PlatformIdFor(id.GetPlainId(), id.GetId());
     }
 
     PlayerBase FindPlayerByGameId(string gameId)

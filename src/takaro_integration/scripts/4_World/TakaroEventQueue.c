@@ -76,6 +76,33 @@ class TakaroEventQueue
 
 class TakaroEventFactory
 {
+    // Takaro links players across servers and games only through steamId /
+    // epicOnlineServicesId / xboxLiveId / platformId, compared verbatim (it
+    // never parses platformId). DayZ PC players are Steam players, so:
+    //   steamId    = the bare SteamID64 (GetPlainId), never the BIS hash
+    //   platformId = "steam:<SteamID64>", the form every other connector uses;
+    //                "dayz:<BIS hash>" only when no SteamID64 is known.
+    static bool IsSteamId64(string sid)
+    {
+        if (sid.Length() != 17) return false;
+        if (sid.Substring(0, 4) != "7656") return false;
+        string digits = "0123456789";
+        for (int i = 0; i < 17; i++)
+        {
+            if (digits.IndexOf(sid.Substring(i, 1)) < 0) return false;
+        }
+        return true;
+    }
+
+    static string PlatformIdFor(string sid, string bis)
+    {
+        if (IsSteamId64(sid)) return "steam:" + sid;
+        int eqIdx = bis.IndexOf("=");
+        if (eqIdx >= 0) bis = bis.Substring(0, eqIdx);
+        if (bis != "") return "dayz:" + bis;
+        return "dayz:" + sid;
+    }
+
     static string NowIso()
     {
         // M1: was World.GetDate (in-game time, not UTC) formatted with
@@ -139,15 +166,12 @@ class TakaroEventFactory
         if (!id && pb) id = pb.GetIdentity();
         if (!id) return "null";
         string sid = id.GetPlainId();
-        string bisid = id.GetId();
-        int eqIdx = bisid.IndexOf("=");
-        if (eqIdx >= 0) bisid = bisid.Substring(0, eqIdx);
         string name = Safe(TakaroNameCache.Resolve(sid, id.GetName()));
         string q = "\"";
         string s = "{" + q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
-        s += "," + q + "steamId" + q + ":" + q + sid + q;
-        s += "," + q + "platformId" + q + ":" + q + "dayz:" + bisid + q;
+        if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
+        s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, id.GetId()) + q;
         s += "," + q + "ping" + q + ":" + id.GetPingAct().ToString();
         s += "}";
         return s;
@@ -214,8 +238,8 @@ class TakaroEventFactory
         s += "," + q + "player" + q + ":{";
         s += q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
-        s += "," + q + "steamId" + q + ":" + q + sid + q;
-        s += "," + q + "platformId" + q + ":" + q + "dayz:" + bis + q;
+        if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
+        s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, bis) + q;
         s += "," + q + "ping" + q + ":" + ping.ToString();
         s += "}}";
         return s;
