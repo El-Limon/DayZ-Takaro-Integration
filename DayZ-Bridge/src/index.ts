@@ -3,6 +3,7 @@ import { DEBUG, logger } from './logger.js';
 import { TakaroWsClient } from './ws/client.js';
 import { LocalHttpServer } from './local/server.js';
 import { rptTailFromEnv } from './local/rptTail.js';
+import { mapServiceFromEnv } from './map/service.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env.BRIDGE_CONFIG || 'TakaroConfig.txt');
@@ -18,12 +19,16 @@ async function main(): Promise<void> {
     name: config.serverName,
   });
 
+  // Map tiles come from the mod's world survey under the profiles directory.
+  const map = mapServiceFromEnv();
+  logger.info(map ? 'Map tiles: serving getMapInfo/getMapTile from the world survey' : 'Map tiles: off (no DAYZ_LOG_DIR/DAYZ_MAP_DIR)');
   const local = new LocalHttpServer(
     config.localPort,
     ws,
     config.serverName,
     config.identityToken,
     config.bindAddress,
+    map,
   );
 
   // F9: forward DayZ .RPT / script log lines to Takaro as `log` events when the

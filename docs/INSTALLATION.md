@@ -80,6 +80,7 @@ Optional tuning:
 - `MaxEventsPerBatch` — caps payload size.
 - `LogVerbose` — turns on debug-level logs in the RPT.
 - `DryRun` — logs what would have been sent without making any HTTP calls. Use for first-run sanity-checking.
+- `MapSurvey` — `1` (default) surveys the world once, a minute after the first start, so the bridge can draw Takaro map tiles. It writes `$profile:TakaroIntegration/map/<world>.survey` in small steps and reuses that file on later starts. `0` turns it off. The console command `mapsurvey start` surveys again, for example after a map update.
 
 See `examples/TakaroConfig.json.example` for the canonical shape.
 

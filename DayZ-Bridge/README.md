@@ -54,7 +54,8 @@ Every file key can also be set from the environment, and the environment wins. W
 | `BRIDGE_BIND_ADDR` | `bindAddress` | Default `127.0.0.1`. |
 | `BRIDGE_CONFIG` | | Path to the config file. |
 | `BRIDGE_POLL_WATCHDOG_SEC` | | Exit if the mod stopped polling for this long, so a supervisor restarts the bridge. `0` disables it. |
-| `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events. |
+| `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events, and map tiles are drawn from `TakaroIntegration/map/<world>.survey` in it. |
+| `DAYZ_MAP_DIR` | | Directory with the mod's map survey, if it is not under `DAYZ_LOG_DIR`. |
 | `DAYZ_LOG_DENY` | | Comma-separated regexes of log lines to skip. |
 | `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `20`. |
 | `DEBUG` | | `1` logs every WebSocket frame, with tokens redacted. |

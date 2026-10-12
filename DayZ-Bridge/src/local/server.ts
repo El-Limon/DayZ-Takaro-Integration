@@ -24,6 +24,7 @@ import http from 'node:http';
 import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
+import { DISABLED_MAP_INFO, parseTileArgs, type MapService } from '../map/service.js';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -154,6 +155,7 @@ export class LocalHttpServer {
     private serverName: string,
     private identityToken: string,
     private bindAddress: string = '127.0.0.1',
+    private map: MapService | null = null,
   ) {
     this.cachedIdentity.identityToken = identityToken;
 
@@ -176,6 +178,11 @@ export class LocalHttpServer {
         this.ws.sendError(requestId, 'No action');
         return;
       }
+      // Map requests are answered here from the world survey; the mod never sees them.
+      if (payload.action === 'getMapInfo' || payload.action === 'getMapTile') {
+        this.answerMap(requestId, payload.action, payload.args);
+        return;
+      }
       this.operationQueue.push({
         operationId: requestId,
         action: payload.action,
@@ -184,6 +191,21 @@ export class LocalHttpServer {
       this.operationActions.set(requestId, payload.action);
       logger.debug(`Queued ${payload.action} (op=${requestId})`);
     });
+  }
+
+  private answerMap(requestId: string, action: string, args: unknown): void {
+    try {
+      if (action === 'getMapInfo') {
+        this.ws.sendResponse(requestId, this.map ? this.map.mapInfo() : DISABLED_MAP_INFO);
+        return;
+      }
+      if (!this.map) throw new Error('Map tiles are not configured (set DAYZ_LOG_DIR or DAYZ_MAP_DIR)');
+      const { x, y, z } = parseTileArgs(args);
+      this.ws.sendResponse(requestId, this.map.tile(x, y, z));
+    } catch (err) {
+      logger.debug(`${action} failed: ${(err as Error).message}`);
+      this.ws.sendError(requestId, (err as Error).message);
+    }
   }
 
   /** F9: lets index.ts surface the RPT tail's forwarded-line count on /health. */

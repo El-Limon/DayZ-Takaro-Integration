@@ -876,6 +876,18 @@ class TakaroCommandDispatcher
                 }
             }
         }
+        else if (verb == "mapsurvey")
+        {
+            // `mapsurvey` shows progress; `mapsurvey start` re-surveys the world for map tiles.
+            TakaroMapSurvey survey = TakaroMapSurvey.Get();
+            if (rest == "start")
+            {
+                if (survey.Start()) rawResult = "Map survey started";
+                else { rawResult = survey.Status(); success = false; }
+            }
+            else
+                rawResult = survey.Status();
+        }
         else if (verb == "announce" || verb == "banner")
         {
             // Loud center-screen banner via Expansion's BAGUETTE notification.
@@ -982,6 +994,7 @@ class TakaroCommandDispatcher
         h += "  party                               - list every online player with their party id (or 'solo')" + nl;
         h += "  announce <message>                  - center-screen banner to all players (Expansion BAGUETTE)" + nl;
         h += "  announce <title> | <message>       -   ...with a custom title (default 'Server')" + nl;
+        h += "  mapsurvey [start]                   - map tile survey status, or survey this world again" + nl;
         h += nl;
         h += "Aliases: addBan/removeBan/teleport/giveItem/listPlayers/listParties/banner." + nl;
         h += "Other RCON commands route through BattlEye when the BE RCON connection is up.";
