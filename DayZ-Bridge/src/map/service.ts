@@ -33,24 +33,28 @@ export class MapService {
   private prepared: PreparedSurvey | null = null;
   private loadedFile = '';
   private loadedMtime = 0;
+  private revision = ''; // survey file + mtime + size; part of every tile cache key
   private checkedAt = 0;
   private tiles = new Map<string, string>(); // key -> base64 PNG, insertion order = LRU
   private blank: string | null = null;
 
-  constructor(private dir: string) {}
+  constructor(
+    private dir: string,
+    private recheckMs = RECHECK_MS,
+  ) {}
 
   /** Newest complete `<world>.survey` in the map directory, reloaded when it changes. */
   current(): PreparedSurvey | null {
     const now = Date.now();
-    if (now - this.checkedAt < RECHECK_MS && this.prepared) return this.prepared;
+    if (now - this.checkedAt < this.recheckMs && this.prepared) return this.prepared;
     this.checkedAt = now;
-    let best: { file: string; mtime: number } | null = null;
+    let best: { file: string; mtime: number; size: number } | null = null;
     try {
       for (const name of fs.readdirSync(this.dir)) {
         if (!name.endsWith('.survey')) continue;
         const file = path.join(this.dir, name);
-        const mtime = fs.statSync(file).mtimeMs;
-        if (!best || mtime > best.mtime) best = { file, mtime };
+        const st = fs.statSync(file);
+        if (!best || st.mtimeMs > best.mtime) best = { file, mtime: st.mtimeMs, size: st.size };
       }
     } catch {
       return this.prepared;
@@ -63,10 +67,11 @@ export class MapService {
       this.prepared = prepareSurvey(survey);
       this.loadedFile = best.file;
       this.loadedMtime = best.mtime;
+      this.revision = `${path.basename(best.file)}:${Math.round(best.mtime)}:${best.size}`;
       this.tiles.clear();
       logger.info(
         `Map survey loaded: ${survey.world} ${survey.size} m, ${survey.buildings.length} buildings, ` +
-          `${survey.surfaceNames.length} surfaces, ${Date.now() - started} ms (${best.file})`,
+          `${survey.surfaceNames.length} surfaces, ${Date.now() - started} ms (${best.file}, revision ${this.revision})`,
       );
     } catch (err) {
       logger.warn(`Map survey ${best.file} not usable: ${(err as Error).message}`);
@@ -96,7 +101,8 @@ export class MapService {
       throw new Error(`Invalid map tile ${z}/${x}/${y} (zoom 0..${MAX_ZOOM})`);
     }
     if (!tileInWorld(p.survey.size, z, x, y)) return this.blankTile();
-    const key = `${z}/${x}/${y}`;
+    // Keyed by survey revision too, so a re-survey or wipe can never serve a tile of the old one.
+    const key = `${this.revision}|${z}/${x}/${y}`;
     const hit = this.tiles.get(key);
     if (hit) {
       this.tiles.delete(key);
@@ -107,6 +113,12 @@ export class MapService {
     this.tiles.set(key, png);
     if (this.tiles.size > CACHE_TILES) this.tiles.delete(this.tiles.keys().next().value!);
     return png;
+  }
+
+  /** Revision of the survey tiles are drawn from ('' before one is loaded). */
+  surveyRevision(): string {
+    this.current();
+    return this.revision;
   }
 
   private blankTile(): string {

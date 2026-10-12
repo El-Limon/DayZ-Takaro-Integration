@@ -147,6 +147,25 @@ test('MapService answers getMapInfo and getMapTile from the newest survey', () =
   fs.rmSync(dir, { recursive: true });
 });
 
+test('MapService never mixes tiles of an old and a new survey', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dayz-map-'));
+  const file = path.join(dir, 'testland.survey');
+  fs.writeFileSync(file, syntheticSurvey());
+  const svc = new MapService(dir, 0);
+  const before = svc.tile(2, 2, 4); // holds the building at (512, 512)
+  const rev = svc.surveyRevision();
+  assert.ok(rev.startsWith('testland.survey:'));
+  // Re-survey: the building is gone; the file is newer and a different size.
+  fs.writeFileSync(file, syntheticSurvey().replace(/^b .*\n/m, ''));
+  const later = new Date(Date.now() + 5000);
+  fs.utimesSync(file, later, later);
+  const after = svc.tile(2, 2, 4);
+  assert.notEqual(svc.surveyRevision(), rev);
+  assert.notEqual(after, before, 'tile must be drawn from the new survey, not the cache');
+  assert.equal(svc.tile(2, 2, 4), after);
+  fs.rmSync(dir, { recursive: true });
+});
+
 test('parseTileArgs accepts JSON strings and numeric strings', () => {
   assert.deepEqual(parseTileArgs('{"x":1,"y":-2,"z":"3"}'), { x: 1, y: -2, z: 3 });
   assert.deepEqual(parseTileArgs({ x: '0', y: 0, z: 0 }), { x: 0, y: 0, z: 0 });
