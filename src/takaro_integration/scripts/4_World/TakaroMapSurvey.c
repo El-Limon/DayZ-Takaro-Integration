@@ -234,11 +234,15 @@ class TakaroMapSurvey
         if (m_LastTick != 0 && m_TicksPerMs > 0)
         {
             float ms = (now - m_LastTick) / m_TicksPerMs;
-            int phase = Phase();
-            m_FrameSum[phase] = m_FrameSum[phase] + ms;
-            m_FrameCount[phase] = m_FrameCount[phase] + 1;
-            if (ms > m_FrameMax[phase])
-                m_FrameMax[phase] = ms;
+            // The counter is a 32-bit int that wraps about every 36 minutes; drop that sample.
+            if (ms >= 0 && ms < 60000)
+            {
+                int phase = Phase();
+                m_FrameSum[phase] = m_FrameSum[phase] + ms;
+                m_FrameCount[phase] = m_FrameCount[phase] + 1;
+                if (ms > m_FrameMax[phase])
+                    m_FrameMax[phase] = ms;
+            }
         }
         m_LastTick = now;
         Calibrate();
