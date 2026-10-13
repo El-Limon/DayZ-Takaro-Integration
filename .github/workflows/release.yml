@@ -1,0 +1,146 @@
+# Auto-release: every push to main builds. If the current version is already
+# released, the version is bumped automatically (patch by default; put the word
+# #minor or #major in the PR title / merge commit for a bigger bump), the bump is committed
+# back to main, and a GitHub release with generated notes is published.
+# Pushes that only touch docs, markdown or CI files build but do not release.
+# A version you bump by hand in a PR is used as-is.
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Force bump level (patch, minor, major); empty = auto"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      sha: ${{ steps.ver.outputs.sha }}
+      release: ${{ steps.ver.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Decide version (auto-bump when the current version is already released)
+        id: ver
+        shell: bash
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          BUMP_INPUT: ${{ github.event.inputs.bump }}
+          BRANCH: main
+        run: |
+          set -euo pipefail
+          read_version() { sed -nE 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([0-9][0-9.]*)".*/\1/p' src/takaro_integration/config.cpp | head -1; }
+          write_version() { sed -i -E "s/^([[:space:]]*version[[:space:]]*=[[:space:]]*\")[0-9.]+(\".*)/\1$1\2/" src/takaro_integration/config.cpp; }
+          cur=$(read_version)
+          [ -n "$cur" ] || { echo "could not read the current version" >&2; exit 1; }
+          tag="v$cur"; sha=$(git rev-parse HEAD); release=true
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            relevant=false
+            while IFS= read -r f; do
+              [ -n "$f" ] || continue
+              case "$f" in docs/*|*.md|.github/*|.gitignore|LICENSE|@HypeTrainSoundFix/*|@IronZoneQuestFix/*|IronZoneQuestFix/*|src/hypetrain_soundfix/*|scripts/deploy_hypetrain_to_prod.ps1) ;; *) relevant=true; echo "releasable change: $f";; esac
+            done < <(git diff --name-only "$tag" HEAD)
+            if [ "$relevant" = false ]; then
+              echo "No releasable changes since $tag (docs/CI only) - build only, no release."
+              release=false
+            else
+              level=patch
+              case "${BUMP_INPUT:-}" in major|minor|patch) level=$BUMP_INPUT;; esac
+              # "#major" / "#minor" must be a standalone token in the merge commit / PR title
+              kw() { grep -Eq "(^|[[:space:](\[])#$1([[:space:])\].,:;!]|$)" <<< "${COMMIT_MSG:-}"; }
+              if kw major; then level=major; elif kw minor; then level=minor; fi
+              IFS=. read -r a b c <<< "$cur"
+              case $level in
+                major) a=$((a+1)); b=0; c=0;;
+                minor) b=$((b+1)); c=0;;
+                patch) c=$(( ${c:-0} + 1 ));;
+              esac
+              new="$a.$b.$c"
+              write_version "$new"
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add -- src/takaro_integration/config.cpp
+              git commit -m "chore: bump version to v$new [skip ci]"
+              git push origin "HEAD:$BRANCH"
+              tag="v$new"; sha=$(git rev-parse HEAD)
+              echo "Bumped $cur -> $new ($level)"
+            fi
+          else
+            echo "Version $cur was set by hand and is not released yet - releasing as-is."
+          fi
+          { echo "tag=$tag"; echo "sha=$sha"; echo "release=$release"; } >> "$GITHUB_OUTPUT"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build dayz_takaro.dll and winmm.dll
+        shell: cmd
+        working-directory: DayZ-DLL
+        run: |
+          cl.exe /nologo /LD /MD /O2 /DNDEBUG /std:c++17 /EHsc dayz_takaro.cpp /link /OUT:dayz_takaro.dll winhttp.lib ws2_32.lib
+          if not exist dayz_takaro.dll exit /b 2
+          cl.exe /nologo /LD /MD /O2 /DNDEBUG /std:c++17 /EHsc winmm_proxy.cpp /link /OUT:winmm.dll
+          if not exist winmm.dll exit /b 3
+
+      - name: Pack TakaroIntegration.pbo
+        shell: bash
+        run: |
+          mkdir -p "@TakaroIntegration/Addons"
+          python scripts/pack_pbo.py src/takaro_integration "@TakaroIntegration/Addons/TakaroIntegration.pbo" --prefix TakaroIntegration
+
+      - name: Stage release layout
+        shell: bash
+        run: |
+          mkdir -p stage/DLLs "stage/@TakaroIntegration/Addons" release
+          cp install.ps1 stage/
+          cp DayZ-DLL/dayz_takaro.dll DayZ-DLL/winmm.dll stage/DLLs/
+          cp "@TakaroIntegration/mod.cpp" "@TakaroIntegration/meta.cpp" "stage/@TakaroIntegration/"
+          cp "@TakaroIntegration/Addons/TakaroIntegration.pbo" "stage/@TakaroIntegration/Addons/"
+          cp "@TakaroIntegration/Addons/TakaroIntegration.pbo" release/
+
+      - name: Zip release
+        shell: pwsh
+        run: Compress-Archive -Path stage\* -DestinationPath "release\DayZ-Takaro-Integration-${{ steps.ver.outputs.tag }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: needs.build.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      - name: Create release ${{ needs.build.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ needs.build.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "${{ needs.build.outputs.sha }}" \
+            --title "${{ needs.build.outputs.tag }}" \
+            --generate-notes \
+            release/*

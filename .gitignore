@@ -19,3 +19,6 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Local server config dumps / scratch (contain server passwords)
+tmp/

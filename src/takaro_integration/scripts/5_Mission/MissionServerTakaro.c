@@ -18,6 +18,8 @@ modded class MissionServer
             m_TakaroBridge.Initialize();
             TakaroBridgeAccessor.Set(m_TakaroBridge);
             TakaroLog.Info("Bridge attached to MissionServer.OnInit");
+            // Map tiles: survey this world once, after the server has settled.
+            TakaroMapSurvey.ScheduleAuto(60000);
         }
     }
 
@@ -42,6 +44,11 @@ modded class MissionServer
         super.InvokeOnConnect(player, identity);
         if (m_TakaroBridge && identity)
             m_TakaroBridge.OnPlayerConnected(player, identity);
+
+        // M3: enforce Takaro bans (TakaroBanStore) on join.
+        string banReason;
+        if (identity && TakaroBanStore.IsBanned(identity.GetPlainId(), banReason))
+            TakaroKicker.Get().Kick(player, identity, "Banned", banReason);
     }
 
     // PlayerDisconnected is the reliable hook — InvokeOnDisconnect is called

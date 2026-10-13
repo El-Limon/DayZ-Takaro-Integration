@@ -1,0 +1,13 @@
+name = "HypeTrain Sound Fix";
+picture = "";
+actionName = "Workshop";
+action = "https://steamcommunity.com/sharedfiles/filedetails/?id=3115714092";
+description = "Restores the engine running/RPM crossfade sound on HypeTrain locomotives, which DayZ 1.29 broke by stopping EOnSimulate ticks on House-based train entities. Forces the train entity to keep simulating on the client so the sound controllers (engineOn, rpm, thrust) update every tick. Diagnosis by Juze; refinements by liquidrock and Wardog; packaged by mad-001 with Arkensor's acknowledgement of the underlying issue.";
+hideName = 0;
+hidePicture = 0;
+overview = "DayZ 1.29 regression fix for HypeTrain by Arkensor. After 1.29, House-based entities (which HypeTrain_PartBase inherits from) stopped receiving EOnSimulate ticks, freezing the per-tick UpdateSoundVariables that drives the engine RPM crossfade. Without those ticks the looping engine sound stays at zero volume even though startup and stop one-shots still play. This mod calls SetRequiredSimulation(true), enables SIMULATE event mask, creates dynamic physics, and pins the body to ALWAYS_ACTIVE on the client so the per-tick handler keeps firing. Requires HypeTrain. Client-side only logic; harmless on a dedicated server.";
+author = "mad-001";
+authorID = "0";
+tooltipOwned = "HypeTrain Sound Fix loaded.";
+type = "mod";
+dependencies[] = {"DZ_Data", "DZ_Scripts"};
