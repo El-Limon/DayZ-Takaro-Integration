@@ -5,6 +5,7 @@ import { LocalHttpServer } from './local/server.js';
 import { rptTailFromEnv } from './local/rptTail.js';
 import { mapServiceFromEnv } from './map/service.js';
 import { buildManifest } from './ws/capabilities.js';
+import { PollWatchdog } from './watchdog.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env.BRIDGE_CONFIG || 'TakaroConfig.txt');
@@ -60,24 +61,32 @@ async function main(): Promise<void> {
   local.start();
   ws.connect();
 
-  // M3 resilience fix (Docker sidecar only, opt-in): the sidecar joins the game
-  // container's network namespace (network_mode: service:dayz). When the game
-  // container restarts (e.g. after Takaro `shutdown`) it gets a NEW netns and the
-  // sidecar keeps listening in the dead one, so every mod poll fails with curl
-  // code 7 and Takaro sees the server as unreachable forever. If the mod has
-  // polled before and then goes silent for BRIDGE_POLL_WATCHDOG_SEC, exit(1) so
-  // the restart policy re-attaches the sidecar to the live namespace.
+  // Docker sidecar only, opt-in: exit (so the restart policy re-attaches the sidecar) when the
+  // game container restarted into a new network namespace. See watchdog.ts for why mod silence
+  // alone is not enough.
   const watchdogSec = parseInt(process.env.BRIDGE_POLL_WATCHDOG_SEC || '0', 10);
   if (Number.isFinite(watchdogSec) && watchdogSec > 0) {
-    logger.info(`Poll watchdog enabled: exit if the mod stops polling for ${watchdogSec}s`);
+    logger.info(`Poll watchdog enabled: exit if the mod stops polling for ${watchdogSec}s and the network namespace is gone`);
+    const tickMs = 5000;
+    const watchdog = new PollWatchdog({ thresholdMs: watchdogSec * 1000, tickMs });
+    let warnedSilent = false;
+    let exiting = false;
     const t = setInterval(() => {
-      const last = local.lastPollAtMs();
-      if (last !== null && Date.now() - last > watchdogSec * 1000) {
-        logger.warn(`Poll watchdog: no mod poll for ${Math.round((Date.now() - last) / 1000)}s — exiting so the container restarts into the game's current network namespace`);
+      if (exiting) return;
+      const r = watchdog.tick(Date.now(), local.lastPollAtMs());
+      if (r.stalledMs > 0) logger.warn(`Poll watchdog: bridge event loop stalled for ${Math.round(r.stalledMs / 1000)}s; not counted as mod silence`);
+      if (r.verdict === 'exit') {
+        exiting = true;
+        logger.warn(`Poll watchdog: no mod poll for ${Math.round(r.silentMs / 1000)}s and only loopback is left in this network namespace — exiting so the container restarts into the game's current one`);
         ws.shutdown();
         setTimeout(() => process.exit(1), 250);
+      } else if (r.verdict === 'silent') {
+        if (!warnedSilent) logger.warn(`Poll watchdog: no mod poll for ${Math.round(r.silentMs / 1000)}s, but the network namespace is alive (game hung or busy) — staying up`);
+        warnedSilent = true;
+      } else {
+        warnedSilent = false;
       }
-    }, 5000);
+    }, tickMs);
     t.unref?.();
   }
 

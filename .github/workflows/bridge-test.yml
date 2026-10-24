@@ -1,0 +1,31 @@
+name: Bridge tests
+
+on:
+  pull_request:
+    paths:
+      - "DayZ-Bridge/**"
+      - ".github/workflows/bridge-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "DayZ-Bridge/**"
+      - ".github/workflows/bridge-test.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: DayZ-Bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: DayZ-Bridge/package-lock.json
+      - run: npm ci
+      - run: npm test
