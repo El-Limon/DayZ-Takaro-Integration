@@ -100,13 +100,43 @@ function mix(a: RGB, b: RGB, t: number): RGB {
 }
 
 export function renderTile(p: PreparedSurvey, zoom: number, x: number, y: number): Uint8Array {
-  const s = p.survey;
-  const out = new Uint8Array(TILE_SIZE * TILE_SIZE * 4);
-  if (zoom < 0 || zoom > MAX_ZOOM || !tileInWorld(s.size, zoom, x, y)) return out;
+  if (zoom < 0 || zoom > MAX_ZOOM || !tileInWorld(p.survey.size, zoom, x, y)) return new Uint8Array(TILE_SIZE * TILE_SIZE * 4);
   const unit = tileUnit(zoom);
-  const mpp = unit / TILE_SIZE;
-  const east0 = x * unit;
-  const north1 = (y + 1) * unit;
+  return renderRegion(p, x * unit, (y + 1) * unit, unit, TILE_SIZE, zoom);
+}
+
+/**
+ * Protocol v1 tiled source: a standard XYZ pyramid over the declared bounds [0, size] on both
+ * axes. Zoom z has 2^z by 2^z tiles of FRAME_TILE_SIZE px; tile row 0 is the north edge.
+ */
+export const FRAME_TILE_SIZE = 256;
+export const FRAME_MIN_ZOOM = 0;
+export const FRAME_MAX_ZOOM = 5;
+
+export function frameTileSpan(size: number, zoom: number): number {
+  return size / 2 ** zoom;
+}
+
+export function isFrameTile(zoom: number, x: number, y: number): boolean {
+  return (
+    Number.isInteger(zoom) && Number.isInteger(x) && Number.isInteger(y) &&
+    zoom >= FRAME_MIN_ZOOM && zoom <= FRAME_MAX_ZOOM && x >= 0 && y >= 0 && x < 2 ** zoom && y < 2 ** zoom
+  );
+}
+
+export function renderFrameTile(p: PreparedSurvey, zoom: number, x: number, y: number): Uint8Array {
+  if (!isFrameTile(zoom, x, y)) return new Uint8Array(FRAME_TILE_SIZE * FRAME_TILE_SIZE * 4);
+  const span = frameTileSpan(p.survey.size, zoom);
+  // Detail (contour spacing) follows metres per pixel, like the legacy zoom level with the same scale.
+  const legacyZoom = clamp(Math.round(MAX_ZOOM - Math.log2(span / FRAME_TILE_SIZE / (MAP_BLOCK_SIZE / TILE_SIZE))), 0, MAX_ZOOM);
+  return renderRegion(p, x * span, p.survey.size - y * span, span, FRAME_TILE_SIZE, legacyZoom);
+}
+
+/** Draws the square east0..east0+unit by north1-unit..north1 (metres) into a tilePx by tilePx RGBA tile. */
+function renderRegion(p: PreparedSurvey, east0: number, north1: number, unit: number, tilePx: number, zoom: number): Uint8Array {
+  const s = p.survey;
+  const out = new Uint8Array(tilePx * tilePx * 4);
+  const mpp = unit / tilePx;
   const cols = s.cols;
   const cell = s.cell;
 
@@ -163,11 +193,11 @@ export function renderTile(p: PreparedSurvey, zoom: number, x: number, y: number
   const contourStep = zoom >= 3 ? 10 : zoom === 2 ? 20 : 50;
   const slopeStep = Math.max(cell, mpp);
 
-  for (let py = 0; py < TILE_SIZE; py++) {
+  for (let py = 0; py < tilePx; py++) {
     const n = north1 - (py + 0.5) * mpp;
-    for (let px = 0; px < TILE_SIZE; px++) {
+    for (let px = 0; px < tilePx; px++) {
       const e = east0 + (px + 0.5) * mpp;
-      const o = (py * TILE_SIZE + px) * 4;
+      const o = (py * tilePx + px) * 4;
       if (e < 0 || n < 0 || e >= s.size || n >= s.size) continue;
       const h = height(e, n);
       let rgb: RGB;
@@ -216,11 +246,11 @@ export function renderTile(p: PreparedSurvey, zoom: number, x: number, y: number
       out[o + 3] = 255;
     }
   }
-  drawBuildings(p, out, east0, north1, unit, mpp);
+  drawBuildings(p, out, east0, north1, unit, mpp, tilePx);
   return out;
 }
 
-function drawBuildings(p: PreparedSurvey, out: Uint8Array, east0: number, north1: number, unit: number, mpp: number): void {
+function drawBuildings(p: PreparedSurvey, out: Uint8Array, east0: number, north1: number, unit: number, mpp: number, tilePx: number): void {
   const margin = 60;
   const bs = p.bucketSize;
   const bx0 = Math.max(0, Math.floor((east0 - margin) / bs));
@@ -231,20 +261,20 @@ function drawBuildings(p: PreparedSurvey, out: Uint8Array, east0: number, north1
     for (let bx = bx0; bx <= bx1; bx++) {
       const list = p.buckets.get(bz * p.bucketCols + bx);
       if (!list) continue;
-      for (const b of list) fillBuilding(b, out, east0, north1, mpp);
+      for (const b of list) fillBuilding(b, out, east0, north1, mpp, tilePx);
     }
   }
 }
 
-function fillBuilding(b: Building, out: Uint8Array, east0: number, north1: number, mpp: number): void {
+function fillBuilding(b: Building, out: Uint8Array, east0: number, north1: number, mpp: number, tilePx: number): void {
   // local axes: forward f = (fx, fz), right r = (fz, -fx) in (east, north)
   const rx = b.fz;
   const rz = -b.fx;
   const radius = Math.hypot(Math.max(-b.minX, b.maxX), Math.max(-b.minZ, b.maxZ));
   const pxMin = Math.max(0, Math.floor((b.x - radius - east0) / mpp));
-  const pxMax = Math.min(TILE_SIZE - 1, Math.floor((b.x + radius - east0) / mpp));
+  const pxMax = Math.min(tilePx - 1, Math.floor((b.x + radius - east0) / mpp));
   const pyMin = Math.max(0, Math.floor((north1 - (b.z + radius)) / mpp));
-  const pyMax = Math.min(TILE_SIZE - 1, Math.floor((north1 - (b.z - radius)) / mpp));
+  const pyMax = Math.min(tilePx - 1, Math.floor((north1 - (b.z - radius)) / mpp));
   if (pxMin > pxMax || pyMin > pyMax) return;
   let painted = false;
   for (let py = pyMin; py <= pyMax; py++) {
@@ -256,7 +286,7 @@ function fillBuilding(b: Building, out: Uint8Array, east0: number, north1: numbe
       const lx = dx * rx + dz * rz;
       const lz = dx * b.fx + dz * b.fz;
       if (lx < b.minX || lx > b.maxX || lz < b.minZ || lz > b.maxZ) continue;
-      const o = (py * TILE_SIZE + px) * 4;
+      const o = (py * tilePx + px) * 4;
       out[o] = BUILDING[0];
       out[o + 1] = BUILDING[1];
       out[o + 2] = BUILDING[2];
@@ -268,8 +298,8 @@ function fillBuilding(b: Building, out: Uint8Array, east0: number, north1: numbe
   if (!painted && mpp <= 4) {
     const px = Math.floor((b.x - east0) / mpp);
     const py = Math.floor((north1 - b.z) / mpp);
-    if (px >= 0 && py >= 0 && px < TILE_SIZE && py < TILE_SIZE) {
-      const o = (py * TILE_SIZE + px) * 4;
+    if (px >= 0 && py >= 0 && px < tilePx && py < tilePx) {
+      const o = (py * tilePx + px) * 4;
       out[o] = BUILDING[0];
       out[o + 1] = BUILDING[1];
       out[o + 2] = BUILDING[2];

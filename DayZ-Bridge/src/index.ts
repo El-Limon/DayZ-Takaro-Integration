@@ -4,6 +4,7 @@ import { TakaroWsClient } from './ws/client.js';
 import { LocalHttpServer } from './local/server.js';
 import { rptTailFromEnv } from './local/rptTail.js';
 import { mapServiceFromEnv } from './map/service.js';
+import { buildManifest } from './ws/capabilities.js';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env.BRIDGE_CONFIG || 'TakaroConfig.txt');
@@ -13,14 +14,27 @@ async function main(): Promise<void> {
   logger.info(`Identity token: ${config.identityToken}`);
   if (DEBUG) logger.info('DEBUG=1 — logging every WS frame and local HTTP request');
 
-  const ws = new TakaroWsClient(config.takaroWsUrl, {
-    identityToken: config.identityToken,
-    registrationToken: config.registrationToken,
-    name: config.serverName,
-  });
-
   // Map tiles come from the mod's world survey under the profiles directory.
   const map = mapServiceFromEnv();
+
+  // Protocol v1 (map Dimensions, acknowledged events) is offered by default; Takaro picks the
+  // version. TAKARO_PROTOCOL=0 sends the old identify.
+  const offerV1 = (process.env.TAKARO_PROTOCOL ?? '1').trim() !== '0';
+  logger.info(offerV1 ? 'Takaro protocol: offering versions 0 and 1' : 'Takaro protocol: version 0 only (TAKARO_PROTOCOL=0)');
+  const ws = new TakaroWsClient(
+    config.takaroWsUrl,
+    {
+      identityToken: config.identityToken,
+      registrationToken: config.registrationToken,
+      name: config.serverName,
+    },
+    { offerV1, manifest: () => buildManifest(map?.dimension() ?? null) },
+  );
+  if (offerV1 && map) {
+    // The survey can finish (or be redone) after identify: declare the new map then.
+    const refresh = setInterval(() => ws.refreshCapabilities(), 30_000);
+    refresh.unref?.();
+  }
   logger.info(map ? 'Map tiles: serving getMapInfo/getMapTile from the world survey' : 'Map tiles: off (no DAYZ_LOG_DIR/DAYZ_MAP_DIR)');
   const local = new LocalHttpServer(
     config.localPort,

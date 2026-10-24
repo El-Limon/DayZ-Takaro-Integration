@@ -58,11 +58,19 @@ Every file key can also be set from the environment, and the environment wins. W
 | `DAYZ_MAP_DIR` | | Directory with the mod's map survey, if it is not under `DAYZ_LOG_DIR`. |
 | `DAYZ_LOG_DENY` | | Comma-separated regexes of log lines to skip. |
 | `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `20`. |
+| `TAKARO_PROTOCOL` | | `0` identifies with Takaro protocol version 0 only. By default the bridge offers versions 0 and 1 and Takaro picks one. |
 | `DEBUG` | | `1` logs every WebSocket frame, with tokens redacted. |
 
 ## What the bridge does
 
 1. Connects WS to Takaro, sends `identify` with registrationToken + serverName, receives `gameServerId`.
+   It offers protocol versions 0 and 1. On version 1 it sends a Capability Manifest with every action and event
+   the mod handles and, once the world survey has finished, the map: one Dimension per world (`chernarusplus`
+   is "Chernarus", `enoch` is "Livonia"), x to the right and z up, bounds `0..<world size>` metres, and a tiled
+   source of 256 px XYZ tiles at zoom 0 to 5 (row 0 is the north edge). Every position the bridge passes on
+   (player location, locations, death and kill events) then names that Dimension, and an offline player's
+   location is `null`. Events are numbered and resent after a reconnect until Takaro acknowledges them.
+   On version 0 the legacy `getMapInfo`/`getMapTile` answers stay as they were.
 2. Listens on `127.0.0.1:<localPort>` for the mod:
    - `POST /gameserver/register` — returns the cached `{identityToken, gameServerId}` so the mod skips its own registration round-trip.
    - `POST /gameserver/<id>/events` — each event in the batch is forwarded as a Takaro `gameEvent` over WS.
