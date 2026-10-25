@@ -5,7 +5,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { logger } from '../logger.js';
 import { encodePng } from './png.js';
-import { MAP_BLOCK_SIZE, MAX_ZOOM, TILE_SIZE, prepareSurvey, renderTile, tileInWorld, type PreparedSurvey } from './render.js';
+import {
+  FRAME_MAX_ZOOM,
+  FRAME_MIN_ZOOM,
+  FRAME_TILE_SIZE,
+  MAP_BLOCK_SIZE,
+  MAX_ZOOM,
+  TILE_SIZE,
+  isFrameTile,
+  prepareSurvey,
+  renderFrameTile,
+  renderTile,
+  tileInWorld,
+  type PreparedSurvey,
+} from './render.js';
 import { parseSurvey } from './survey.js';
 
 export interface MapInfo {
@@ -25,6 +38,35 @@ export const DISABLED_MAP_INFO: MapInfo = {
   mapSizeY: 0,
   mapSizeZ: 0,
 };
+
+/** Display names for the official worlds; any other world shows under its engine name. */
+const WORLD_NAMES: Record<string, string> = {
+  chernarusplus: 'Chernarus',
+  enoch: 'Livonia',
+  sakhal: 'Sakhal',
+};
+
+export function worldDisplayName(world: string): string {
+  return WORLD_NAMES[world.toLowerCase()] ?? world;
+}
+
+/** A protocol v1 map Dimension. DayZ positions are metres, x east and z north, y is height. */
+export interface MapDimension {
+  id: string;
+  name: string;
+  axes: { horizontal: { field: 'x'; direction: 'right' }; vertical: { field: 'z'; direction: 'up' } };
+  bounds: { horizontal: { min: number; max: number }; vertical: { min: number; max: number } };
+  source: { type: 'tiled'; tileSize: number; minZoom: number; maxZoom: number };
+}
+
+export class MapTileError extends Error {
+  constructor(
+    readonly code: 'invalid_args' | 'not_found',
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 const RECHECK_MS = 30_000;
 const CACHE_TILES = 2000;
@@ -115,6 +157,40 @@ export class MapService {
     return png;
   }
 
+  /** The loaded world as a protocol v1 Dimension, or null before a survey has finished. */
+  dimension(): MapDimension | null {
+    const p = this.current();
+    if (!p) return null;
+    const size = p.survey.size;
+    return {
+      id: p.survey.world,
+      name: worldDisplayName(p.survey.world),
+      axes: { horizontal: { field: 'x', direction: 'right' }, vertical: { field: 'z', direction: 'up' } },
+      bounds: { horizontal: { min: 0, max: size }, vertical: { min: 0, max: size } },
+      source: { type: 'tiled', tileSize: FRAME_TILE_SIZE, minZoom: FRAME_MIN_ZOOM, maxZoom: FRAME_MAX_ZOOM },
+    };
+  }
+
+  /** The protocol v1 getMapTile answer for the declared Dimension. */
+  frameTile(dimension: unknown, zoom: number, x: number, y: number): { mimeType: 'image/png'; data: string } {
+    const p = this.current();
+    if (!p) throw new MapTileError('not_found', 'Map not available yet: the world survey has not finished (console: mapsurvey)');
+    if (dimension !== p.survey.world) throw new MapTileError('not_found', `Unknown map dimension ${String(dimension)}`);
+    if (!isFrameTile(zoom, x, y)) {
+      throw new MapTileError('invalid_args', `Map tile ${zoom}/${x}/${y} is outside the declared pyramid (zoom ${FRAME_MIN_ZOOM}..${FRAME_MAX_ZOOM})`);
+    }
+    const key = `${this.revision}|v1|${zoom}/${x}/${y}`;
+    let png = this.tiles.get(key);
+    if (png) {
+      this.tiles.delete(key);
+    } else {
+      png = encodePng(FRAME_TILE_SIZE, FRAME_TILE_SIZE, renderFrameTile(p, zoom, x, y)).toString('base64');
+      if (this.tiles.size >= CACHE_TILES) this.tiles.delete(this.tiles.keys().next().value!);
+    }
+    this.tiles.set(key, png);
+    return { mimeType: 'image/png', data: png };
+  }
+
   /** Revision of the survey tiles are drawn from ('' before one is loaded). */
   surveyRevision(): string {
     this.current();
@@ -134,6 +210,19 @@ export function parseTileArgs(args: unknown): { x: number; y: number; z: number 
   const o = (obj ?? {}) as Record<string, unknown>;
   const num = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
   return { x: num(o.x), y: num(o.y), z: num(o.z) };
+}
+
+/** Protocol v1 getMapTile args: {dimension, zoom, x, y}. */
+export function parseFrameTileArgs(args: unknown): { dimension: unknown; zoom: number; x: number; y: number } {
+  let obj: unknown = args;
+  if (typeof args === 'string') obj = args ? JSON.parse(args) : {};
+  const o = (obj ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  const out = { dimension: o.dimension, zoom: num(o.zoom), x: num(o.x), y: num(o.y) };
+  if (typeof out.dimension !== 'string' || ![out.zoom, out.x, out.y].every(Number.isInteger)) {
+    throw new MapTileError('invalid_args', 'getMapTile needs { dimension, zoom, x, y }');
+  }
+  return out;
 }
 
 export function mapServiceFromEnv(env: NodeJS.ProcessEnv = process.env): MapService | null {

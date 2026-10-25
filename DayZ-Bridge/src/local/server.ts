@@ -24,7 +24,8 @@ import http from 'node:http';
 import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
-import { DISABLED_MAP_INFO, parseTileArgs, type MapService } from '../map/service.js';
+import { DISABLED_MAP_INFO, MapTileError, parseFrameTileArgs, parseTileArgs, type MapService } from '../map/service.js';
+import { eventWithDimension, withDimension } from '../ws/capabilities.js';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -193,8 +194,20 @@ export class LocalHttpServer {
     });
   }
 
+  /** The Dimension positions carry on a protocol v1 connection, or null on v0 / without a map. */
+  private positionDimension(): string | null {
+    if (this.ws.getProtocolVersion() !== 1 || !this.map) return null;
+    return this.map.dimension()?.id ?? null;
+  }
+
   private answerMap(requestId: string, action: string, args: unknown): void {
     try {
+      if (action === 'getMapTile' && this.ws.getProtocolVersion() === 1) {
+        if (!this.map) throw new MapTileError('not_found', 'Map tiles are not configured (set DAYZ_LOG_DIR or DAYZ_MAP_DIR)');
+        const { dimension, zoom, x, y } = parseFrameTileArgs(args);
+        this.ws.sendResponse(requestId, this.map.frameTile(dimension, zoom, x, y));
+        return;
+      }
       if (action === 'getMapInfo') {
         this.ws.sendResponse(requestId, this.map ? this.map.mapInfo() : DISABLED_MAP_INFO);
         return;
@@ -204,7 +217,7 @@ export class LocalHttpServer {
       this.ws.sendResponse(requestId, this.map.tile(x, y, z));
     } catch (err) {
       logger.debug(`${action} failed: ${(err as Error).message}`);
-      this.ws.sendError(requestId, (err as Error).message);
+      this.ws.sendError(requestId, (err as Error).message, err instanceof MapTileError ? err.code : 'game_error');
     }
   }
 
@@ -264,6 +277,8 @@ export class LocalHttpServer {
           identified: this.ws.identified(),
           wsConnected: this.ws.connected(),
           gameServerId: this.ws.getGameServerId(),
+          protocolVersion: this.ws.getProtocolVersion(),
+          unacknowledgedEvents: this.ws.unacknowledged(),
           pendingOperations: this.operationQueue.length,
           lastModContactAt: this.lastModContactAt,
           lastPollAt: this.lastPollAt,
@@ -312,9 +327,11 @@ export class LocalHttpServer {
             );
             return this.send(res, 503, { error: 'Takaro WebSocket not connected; retry', deferred: events.length });
           }
+          const dimension = this.positionDimension();
           for (const ev of events) {
             // strip the type field from the data payload — Takaro takes type separately
-            const { type, ...rest } = ev;
+            const { type, ...fields } = ev;
+            const rest = dimension ? eventWithDimension(fields, dimension) : fields;
             // F2: the mod stamps in-game world time at minute resolution, which
             // Takaro shows as wildly wrong event times. Ingest time in the bridge
             // is within milliseconds of the real event, so it wins.
@@ -348,8 +365,9 @@ export class LocalHttpServer {
           const action = this.operationActions.get(opId);
           this.operationActions.delete(opId);
           if (obj.ok) {
-            const result = shapeForAction(action, obj.result ?? {});
-            this.ws.sendResponse(opId, result);
+            const shaped = shapeForAction(action, obj.result ?? {});
+            const dimension = this.positionDimension();
+            this.ws.sendResponse(opId, dimension ? withDimension(action, shaped, dimension) : shaped);
           } else {
             this.ws.sendError(opId, obj.error || 'Unknown error');
           }
