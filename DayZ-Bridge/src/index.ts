@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   // alone is not enough.
   const watchdogSec = parseInt(process.env.BRIDGE_POLL_WATCHDOG_SEC || '0', 10);
   if (Number.isFinite(watchdogSec) && watchdogSec > 0) {
-    logger.info(`Poll watchdog enabled: exit if the mod stops polling for ${watchdogSec}s and the network namespace is gone`);
+    logger.info(`Poll watchdog enabled: exit if only loopback is left in this network namespace for ${watchdogSec}s`);
     const tickMs = 5000;
     const watchdog = new PollWatchdog({ thresholdMs: watchdogSec * 1000, tickMs });
     let warnedSilent = false;
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       if (r.stalledMs > 0) logger.warn(`Poll watchdog: bridge event loop stalled for ${Math.round(r.stalledMs / 1000)}s; not counted as mod silence`);
       if (r.verdict === 'exit') {
         exiting = true;
-        logger.warn(`Poll watchdog: no mod poll for ${Math.round(r.silentMs / 1000)}s and only loopback is left in this network namespace — exiting so the container restarts into the game's current one`);
+        logger.warn(`Poll watchdog: only loopback left in this network namespace for ${watchdogSec}s (no mod poll for ${Math.round(r.silentMs / 1000)}s) — exiting so the container restarts into the game's current one`);
         ws.shutdown();
         setTimeout(() => process.exit(1), 250);
       } else if (r.verdict === 'silent') {

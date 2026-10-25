@@ -53,7 +53,7 @@ Every file key can also be set from the environment, and the environment wins. W
 | `BRIDGE_LOCAL_PORT` | `localPort` | |
 | `BRIDGE_BIND_ADDR` | `bindAddress` | Default `127.0.0.1`. |
 | `BRIDGE_CONFIG` | | Path to the config file. |
-| `BRIDGE_POLL_WATCHDOG_SEC` | | Docker sidecar: exit when the mod stopped polling for this long **and** only loopback is left in the network namespace (the game container restarted), so the restart policy re-attaches the bridge. A hung or busy game does not trigger it. `0` disables it. |
+| `BRIDGE_POLL_WATCHDOG_SEC` | | Docker sidecar: exit when only loopback has been left in the network namespace for this many seconds (the game container restarted or stopped), so the restart policy re-attaches the bridge. A hung or busy game does not trigger it. `0` disables it. |
 | `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events, and map tiles are drawn from `TakaroIntegration/map/<world>.survey` in it. |
 | `DAYZ_MAP_DIR` | | Directory with the mod's map survey, if it is not under `DAYZ_LOG_DIR`. |
 | `DAYZ_LOG_DENY` | | Comma-separated regexes of log lines to skip. |
@@ -98,7 +98,9 @@ namespace (`network_mode: service:<dayz>`). The mod then reaches the bridge on `
 - Do not mount the `@TakaroIntegration` folder read-only. With a `:ro` mount the server loads nothing from `Addons/`
   and logs no error.
 - If the game container is recreated on its own, the bridge keeps the old network namespace and every poll fails.
-  Recreate both together, or set `BRIDGE_POLL_WATCHDOG_SEC` with a restart policy.
+  Recreate both together, or set `BRIDGE_POLL_WATCHDOG_SEC` with a restart policy. Docker tries that restart once: if
+  the game container is still restarting at that moment, the start fails ("cannot join network namespace") and Docker
+  does not retry, so run something that starts the exited bridge again once the game container is up.
 - Folder and file casing of the mod did not matter on this build. `-servermod=`, `-serverMod=` and `-mod=` all
   loaded it.
 - RestApi callback codes: `5` client error (4xx), `6` server error (5xx), `7` app error, `8` timeout. A code `8` means
