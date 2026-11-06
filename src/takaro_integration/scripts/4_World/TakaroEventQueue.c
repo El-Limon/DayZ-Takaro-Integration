@@ -165,6 +165,7 @@ class TakaroEventFactory
     {
         if (!id && pb) id = pb.GetIdentity();
         if (!id) return "null";
+        if (!pb) pb = PlayerBase.Cast(id.GetPlayer());
         string sid = id.GetPlainId();
         string name = Safe(TakaroNameCache.Resolve(sid, id.GetName()));
         string q = "\"";
@@ -173,16 +174,17 @@ class TakaroEventFactory
         if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
         s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, id.GetId()) + q;
         s += "," + q + "ping" + q + ":" + id.GetPingAct().ToString();
+        s += TakaroCharacter.JsonMember(pb);
         s += "}";
         return s;
     }
 
-    static string Connected(PlayerIdentity id)
+    static string Connected(PlayerIdentity id, PlayerBase pb)
     {
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-connected" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":" + PlayerJson(id, null);
+        s += "," + q + "player" + q + ":" + PlayerJson(id, pb);
         s += "}";
         return s;
     }
@@ -206,7 +208,7 @@ class TakaroEventFactory
     // them Takaro's resolveRef throws "Platform ID collision detected"
     // because gameId would mismatch the existing POG and the disconnect
     // event silently drops.
-    static string Disconnected(PlayerIdentity id, PlayerBase pb, string uid, string cachedSteam = "", string cachedName = "")
+    static string Disconnected(PlayerIdentity id, PlayerBase pb, string uid, string cachedSteam = "", string cachedName = "", string cachedCharacter = "")
     {
         // Strip trailing '=' from BIS uid to satisfy Takaro's platformId regex.
         string bis = uid;
@@ -241,6 +243,7 @@ class TakaroEventFactory
         if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
         s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, bis) + q;
         s += "," + q + "ping" + q + ":" + ping.ToString();
+        s += cachedCharacter;
         s += "}}";
         return s;
     }
@@ -269,6 +272,7 @@ class TakaroEventFactory
         string s = "{" + q + "type" + q + ":" + q + "player-death" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
         s += "," + q + "player" + q + ":" + PlayerJson(null, victim);
+        s += "," + q + "characterEnded" + q + ":true";
         if (killer && killer.IsInherited(PlayerBase))
         {
             PlayerBase kp = PlayerBase.Cast(killer);

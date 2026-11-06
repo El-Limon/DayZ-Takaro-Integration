@@ -110,6 +110,8 @@ class ResultPlayerInfo
     string ip;
     int ping;
     bool online;
+    string characterId;
+    string characterName;
 }
 
 class ResultPlayersList
@@ -268,6 +270,8 @@ class TakaroCommandDispatcher
             info.platformId = BuildPlatformId(id);
             info.ping = id.GetPingAct();
             info.online = true;
+            info.characterId = TakaroCharacter.Id(pb);
+            info.characterName = TakaroCharacter.Name(pb);
             list.players.Insert(info);
         }
         ReplyOk(op, SerializePlayersList(list));
@@ -303,6 +307,9 @@ class TakaroCommandDispatcher
         info.platformId = BuildPlatformId(id);
         info.ping = id.GetPingAct();
         info.online = true;
+        PlayerBase pb = PlayerBase.Cast(id.GetPlayer());
+        info.characterId = TakaroCharacter.Id(pb);
+        info.characterName = TakaroCharacter.Name(pb);
         ReplyOk(op, SerializePlayerInfo(info));
     }
 

@@ -25,7 +25,7 @@ import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
 import { DISABLED_MAP_INFO, MapTileError, parseFrameTileArgs, parseTileArgs, type MapService } from '../map/service.js';
-import { eventWithDimension, withDimension } from '../ws/capabilities.js';
+import { eventWithDimension, withCharacter, withDimension } from '../ws/capabilities.js';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -94,6 +94,9 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
     if (v && typeof v === 'object' && Array.isArray((v as { players?: unknown[] }).players)) {
       v = (v as { players: unknown[] }).players;
     }
+    if (Array.isArray(v)) v = v.map(withCharacter);
+  } else if (action === 'getPlayer') {
+    v = withCharacter(v);
   } else if (action === 'listBans') {
     if (v && typeof v === 'object' && Array.isArray((v as { bans?: unknown[] }).bans)) {
       v = (v as { bans: unknown[] }).bans;

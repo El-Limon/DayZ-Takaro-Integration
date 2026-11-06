@@ -37,10 +37,29 @@ export const EVENT_CAPABILITIES = [
   'events.log',
 ] as const;
 
+/** Characters live in the server's own database, and a DayZ death ends one for good. */
+export const CHARACTERS_CAPABILITY: Capability = {
+  name: 'players.characters',
+  parameters: { held: 'server', ends: ['death'] },
+};
+
 export function buildManifest(dimension: MapDimension | null): Capability[] {
   const manifest: Capability[] = [...ACTION_CAPABILITIES, ...EVENT_CAPABILITIES].map((name) => ({ name }));
+  manifest.push(CHARACTERS_CAPABILITY);
   if (dimension) manifest.push({ name: 'map', parameters: { dimensions: [dimension] } });
   return manifest;
+}
+
+/**
+ * The mod reports the character as flat fields, because Enforce's JsonSerializer writes nested
+ * classes poorly. Takaro takes one `character` object; a player without an id gets none.
+ */
+export function withCharacter(player: unknown): unknown {
+  if (!player || typeof player !== 'object') return player;
+  const { characterId, characterName, ...rest } = player as Record<string, unknown>;
+  if (typeof characterId !== 'string' || characterId === '') return rest;
+  const name = typeof characterName === 'string' && characterName !== '' ? characterName : String(rest.name ?? characterId);
+  return { ...rest, character: { id: characterId, name } };
 }
 
 /**
