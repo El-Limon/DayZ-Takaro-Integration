@@ -133,6 +133,9 @@ class TakaroBridge
     {
         if (!m_Initialized) return;
         if (!identity) return;
+        // A kick never reaches PlayerDisconnected, so its guard outlives the
+        // session; without this the next disconnect would be swallowed.
+        m_DisconnectEmitted.Remove(identity.GetId());
         m_Queue.Enqueue(TakaroEventFactory.Connected(identity, player));
         TakaroLog.Debug("event: player-connected " + identity.GetName());
 
