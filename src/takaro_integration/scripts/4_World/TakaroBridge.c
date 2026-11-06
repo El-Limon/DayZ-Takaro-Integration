@@ -208,7 +208,29 @@ class TakaroBridge
     {
         if (!m_Initialized) return;
         if (!victim) return;
-        m_Queue.Enqueue(TakaroEventFactory.Death(victim, killer, weapon));
+
+        string cachedPlayer = "";
+        if (!victim.GetIdentity())
+        {
+            cachedPlayer = CachedPlayerJson(victim.GetCachedID());
+            if (cachedPlayer == "")
+            {
+                TakaroLog.Warn("player-death skipped: body has no identity and no cached player");
+                return;
+            }
+        }
+        m_Queue.Enqueue(TakaroEventFactory.Death(victim, killer, weapon, cachedPlayer));
+    }
+
+    // The connect-time player for a BIS uid, or "" if none is cached.
+    protected string CachedPlayerJson(string uid)
+    {
+        string bisKey = uid;
+        int eqIdx = bisKey.IndexOf("=");
+        if (eqIdx >= 0) bisKey = bisKey.Substring(0, eqIdx);
+        if (!m_BisToSteam.Contains(bisKey)) return "";
+        string name = TakaroEventFactory.Safe(m_BisToName.Get(bisKey));
+        return TakaroEventFactory.PlayerRef(m_BisToSteam.Get(bisKey), name, bisKey, 0, m_BisToCharacter.Get(bisKey));
     }
 
     // F4 — a player killed an infected/animal. `entityType` is the victim

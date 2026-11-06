@@ -237,14 +237,23 @@ class TakaroEventFactory
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-disconnected" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":{";
-        s += q + "gameId" + q + ":" + q + sid + q;
+        s += "," + q + "player" + q + ":" + PlayerRef(sid, name, bis, ping, cachedCharacter);
+        s += "}";
+        return s;
+    }
+
+    // A player object built from known fields, for a player whose identity
+    // is already gone. `name` is expected to be escaped.
+    static string PlayerRef(string sid, string name, string bis, int ping, string character)
+    {
+        string q = "\"";
+        string s = "{" + q + "gameId" + q + ":" + q + sid + q;
         s += "," + q + "name" + q + ":" + q + name + q;
         if (IsSteamId64(sid)) s += "," + q + "steamId" + q + ":" + q + sid + q;
         s += "," + q + "platformId" + q + ":" + q + PlatformIdFor(sid, bis) + q;
         s += "," + q + "ping" + q + ":" + ping.ToString();
-        s += cachedCharacter;
-        s += "}}";
+        s += character;
+        s += "}";
         return s;
     }
 
@@ -264,14 +273,18 @@ class TakaroEventFactory
         return s;
     }
 
-    static string Death(PlayerBase victim, EntityAI killer, string weapon)
+    // cachedPlayer stands in for the victim when the body has lost its identity,
+    // which is the case for a death during the logout timer.
+    static string Death(PlayerBase victim, EntityAI killer, string weapon, string cachedPlayer = "")
     {
         // EventPlayerDeath has no `weapon` field (that's on EventEntityKilled).
         // Fold the weapon name into the optional `msg` so it isn't lost.
         string q = "\"";
         string s = "{" + q + "type" + q + ":" + q + "player-death" + q;
         s += "," + q + "timestamp" + q + ":" + q + NowIso() + q;
-        s += "," + q + "player" + q + ":" + PlayerJson(null, victim);
+        string victimJson = cachedPlayer;
+        if (victimJson == "") victimJson = PlayerJson(null, victim);
+        s += "," + q + "player" + q + ":" + victimJson;
         s += "," + q + "characterEnded" + q + ":true";
         if (killer && killer.IsInherited(PlayerBase))
         {
