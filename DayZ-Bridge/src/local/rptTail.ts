@@ -199,6 +199,7 @@ export class RptTail {
     if (now - this.windowStart >= 1000) {
       if (this.dropped > 0) {
         logger.debug(`rptTail: dropped ${this.dropped} lines to the rate limit`);
+        this.dropped = 0;
       }
       this.windowStart = now;
       this.windowCount = 0;
