@@ -11,6 +11,7 @@ import { PNG_SIGNATURE } from '../dist/map/png.js';
 import { MapService, MapTileError, parseFrameTileArgs, worldDisplayName } from '../dist/map/service.js';
 import { buildManifest, withCharacter, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
 import { TakaroWsClient } from '../dist/ws/client.js';
+import { slimArgs } from '../dist/local/server.js';
 
 // Same synthetic 1024 m world as map.test.mjs: sea in the south quarter, a 20x10 m building at (512, 512).
 function syntheticSurvey(world = 'testland') {
@@ -238,4 +239,18 @@ test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
   assert.deepEqual(identify.payload, { identityToken: 'i', registrationToken: 'r', name: 'n' });
   client.shutdown();
   takaro.wss.close();
+});
+
+test('flat and nested player ids reach the mod as the same gameId', () => {
+  const nested = JSON.parse(slimArgs(JSON.stringify({ player: { gameId: '7656', roles: ['x'] }, reason: 'r' })));
+  assert.deepEqual(nested, { player: { gameId: '7656' }, reason: 'r' });
+  const flat = JSON.parse(slimArgs(JSON.stringify({ gameId: '7656', playerId: 'p', gameServerId: 'g', roles: [] })));
+  assert.deepEqual(flat, { gameId: '7656' });
+});
+
+test('args without a player pass through in every encoding', () => {
+  assert.equal(slimArgs('[]'), '[]');
+  assert.equal(slimArgs('{}'), '{}');
+  assert.equal(slimArgs('{"message":"hi"}'), '{"message":"hi"}');
+  assert.equal(slimArgs('not json'), 'not json');
 });
