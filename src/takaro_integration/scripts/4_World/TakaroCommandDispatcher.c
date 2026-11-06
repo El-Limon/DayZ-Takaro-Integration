@@ -519,16 +519,57 @@ class TakaroCommandDispatcher
             ReplyError(op, "player " + gameId + " is not online");
             return;
         }
-        for (int i = 0; i < amount; i++)
+        if (!IsItemClass(itemClass))
+        {
+            ReplyError(op, "giveItem: unknown item " + itemClass);
+            return;
+        }
+        GiveUnits(pb, itemClass, amount);
+        ReplyOk(op, "{}");
+    }
+
+    protected bool IsItemClass(string itemClass)
+    {
+        if (GetGame().ConfigIsExisting("CfgVehicles " + itemClass)) return true;
+        if (GetGame().ConfigIsExisting("CfgMagazines " + itemClass)) return true;
+        return GetGame().ConfigIsExisting("CfgWeapons " + itemClass);
+    }
+
+    // Gives `amount` units, the count getPlayerInventory reports: one stack of
+    // a stackable item holds several. Returns how many entities landed in the
+    // inventory; the rest drop at the player's feet.
+    protected int GiveUnits(PlayerBase pb, string itemClass, int amount)
+    {
+        int inInventory = 0;
+        int remaining = amount;
+        while (remaining > 0)
         {
             EntityAI item = pb.GetInventory().CreateInInventory(itemClass);
-            if (!item)
-            {
-                // Drop on ground at player's feet as a fallback.
-                GetGame().CreateObject(itemClass, pb.GetPosition());
-            }
+            if (item) inInventory++;
+            else item = EntityAI.Cast(GetGame().CreateObject(itemClass, pb.GetPosition()));
+            remaining -= TrimStack(item, remaining);
         }
-        ReplyOk(op, "{}");
+        return inInventory;
+    }
+
+    // Reduces a fresh stack to at most `wanted` units; returns the units it holds.
+    protected int TrimStack(EntityAI item, int wanted)
+    {
+        int units = 1;
+        Magazine mag = Magazine.Cast(item);
+        ItemBase ib = ItemBase.Cast(item);
+        if (mag && mag.IsAmmoPile())
+        {
+            units = (int)Math.Min(wanted, mag.GetAmmoMax());
+            if (units > 0) mag.ServerSetAmmoCount(units);
+        }
+        else if (ib && ib.ConfigGetBool("canBeSplit"))
+        {
+            units = (int)Math.Min(wanted, ib.GetQuantityMax());
+            if (units > 0) ib.SetQuantity(units);
+        }
+        if (units < 1) return 1;
+        return units;
     }
 
     void HandleExecCommand(TakaroOperation op)
@@ -687,13 +728,7 @@ class TakaroCommandDispatcher
                 {
                     int gamount = 1;
                     if (gparts.Count() >= 3) { gamount = gparts[2].ToInt(); if (gamount <= 0) gamount = 1; }
-                    int gcreated = 0;
-                    for (int gi = 0; gi < gamount; gi++)
-                    {
-                        EntityAI gent = gpb.GetInventory().CreateInInventory(gparts[1]);
-                        if (!gent) GetGame().CreateObject(gparts[1], gpb.GetPosition());
-                        else gcreated++;
-                    }
+                    int gcreated = GiveUnits(gpb, gparts[1], gamount);
                     rawResult = "Gave " + gamount.ToString() + "x " + gparts[1] + " to " + gparts[0] + " (" + gcreated.ToString() + " in inventory, rest dropped)";
                 }
             }
