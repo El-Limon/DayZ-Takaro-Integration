@@ -45,6 +45,8 @@ The sidecar exists because DayZ Enforce Script's `RestApi`/`RestContext` is HTTP
 | Chat capture | scaffolded — needs CF or VPP compat addon to bind real hook (see [docs/EVENT_MAPPING.md](docs/EVENT_MAPPING.md)) |
 | Ban list writeback | falls back to kick; needs VPP compat addon for real ban list write |
 | Map tiles (`getMapInfo` / `getMapTile`), drawn from the server's own terrain, surfaces, buildings and trees (`MapSurvey`) | **verified** on Chernarus (DayZ 1.29 Linux) against Takaro staging: tiles in the Takaro player map, player marker matches the in-game GPS position at two places |
+| Player levels and skills | ❌ DayZ has no levels or skills: the only stat, a hidden soft-skill value, has no levels and nothing in the game reads it |
+| Characters (`players.characters`, ended by death) | requires a Takaro version with Characters support |
 
 ## Repo layout
 
