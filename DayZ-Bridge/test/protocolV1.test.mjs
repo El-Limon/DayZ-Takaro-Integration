@@ -11,7 +11,7 @@ import { PNG_SIGNATURE } from '../dist/map/png.js';
 import { MapService, MapTileError, parseFrameTileArgs, worldDisplayName } from '../dist/map/service.js';
 import { buildManifest, withCharacter, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
 import { TakaroWsClient } from '../dist/ws/client.js';
-import { slimArgs } from '../dist/local/server.js';
+import { bridgeHealthy, slimArgs } from '../dist/local/server.js';
 
 // Same synthetic 1024 m world as map.test.mjs: sea in the south quarter, a 20x10 m building at (512, 512).
 function syntheticSurvey(world = 'testland') {
@@ -253,4 +253,13 @@ test('args without a player pass through in every encoding', () => {
   assert.equal(slimArgs('{}'), '{}');
   assert.equal(slimArgs('{"message":"hi"}'), '{"message":"hi"}');
   assert.equal(slimArgs('not json'), 'not json');
+});
+
+test('health is ok only while Takaro is connected and the mod is polling', () => {
+  const now = 100_000;
+  assert.equal(bridgeHealthy(true, true, now - 1_000, now), true);
+  assert.equal(bridgeHealthy(true, true, now - 60_000, now), false);
+  assert.equal(bridgeHealthy(true, true, null, now), false);
+  assert.equal(bridgeHealthy(false, true, now - 1_000, now), false);
+  assert.equal(bridgeHealthy(true, false, now - 1_000, now), false);
 });

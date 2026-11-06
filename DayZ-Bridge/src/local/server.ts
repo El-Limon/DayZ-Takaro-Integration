@@ -276,7 +276,7 @@ export class LocalHttpServer {
       // Health
       if (method === 'GET' && path === '/health') {
         return this.send(res, 200, {
-          ok: true,
+          ok: bridgeHealthy(this.ws.identified(), this.ws.connected(), this.lastPollAtMs(), Date.now()),
           identified: this.ws.identified(),
           wsConnected: this.ws.connected(),
           gameServerId: this.ws.getGameServerId(),
@@ -402,6 +402,14 @@ export function parseModJson(body: string): any {
     );
     return JSON.parse(cleaned);
   }
+}
+
+/** The mod polls about once a second, so this much silence means the game is gone. */
+const MOD_POLL_STALE_MS = 15_000;
+
+/** True only while events can flow end to end: Takaro identified us and the mod is polling. */
+export function bridgeHealthy(identified: boolean, wsConnected: boolean, lastPollMs: number | null, nowMs: number): boolean {
+  return identified && wsConnected && lastPollMs !== null && nowMs - lastPollMs < MOD_POLL_STALE_MS;
 }
 
 /**

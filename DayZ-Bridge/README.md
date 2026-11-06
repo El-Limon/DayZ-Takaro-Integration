@@ -87,7 +87,7 @@ Every file key can also be set from the environment, and the environment wins. W
    batch and retries, so events are delivered once after a reconnect instead of being dropped.
 8. Passes only the player's `gameId` to the mod for player-targeted actions. Takaro sends the whole player record,
    which is long enough that Enforce Script truncates the argument string.
-9. `/health` reports `identified`, `wsConnected`, `lastModContactAt`, `lastPollAt`, `lastEventAt`,
+9. `/health` reports `ok` (true only while Takaro is connected and the mod is polling), `identified`, `wsConnected`, `lastModContactAt`, `lastPollAt`, `lastEventAt`,
    `eventsForwarded`, `eventsDeferred` and `logsForwarded`.
 
 ## Linux hosting (Docker)
