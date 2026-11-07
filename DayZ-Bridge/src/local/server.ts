@@ -25,7 +25,7 @@ import { DEBUG, logger, truncate } from '../logger.js';
 import type { TakaroWsClient } from '../ws/client.js';
 import type { GameEventType, WsMessage } from '../ws/protocol.js';
 import { DISABLED_MAP_INFO, MapTileError, parseFrameTileArgs, parseTileArgs, type MapService } from '../map/service.js';
-import { eventWithDimension, withDimension } from '../ws/capabilities.js';
+import { eventWithDimension, withCharacter, withDimension } from '../ws/capabilities.js';
 
 interface PendingOperation {
   operationId: string; // = WS requestId
@@ -94,6 +94,9 @@ function shapeForAction(action: string | undefined, raw: unknown): unknown {
     if (v && typeof v === 'object' && Array.isArray((v as { players?: unknown[] }).players)) {
       v = (v as { players: unknown[] }).players;
     }
+    if (Array.isArray(v)) v = v.map(withCharacter);
+  } else if (action === 'getPlayer') {
+    v = withCharacter(v);
   } else if (action === 'listBans') {
     if (v && typeof v === 'object' && Array.isArray((v as { bans?: unknown[] }).bans)) {
       v = (v as { bans: unknown[] }).bans;
@@ -273,7 +276,7 @@ export class LocalHttpServer {
       // Health
       if (method === 'GET' && path === '/health') {
         return this.send(res, 200, {
-          ok: true,
+          ok: bridgeHealthy(this.ws.identified(), this.ws.connected(), this.lastPollAtMs(), Date.now()),
           identified: this.ws.identified(),
           wsConnected: this.ws.connected(),
           gameServerId: this.ws.getGameServerId(),
@@ -399,6 +402,14 @@ export function parseModJson(body: string): any {
     );
     return JSON.parse(cleaned);
   }
+}
+
+/** The mod polls about once a second, so this much silence means the game is gone. */
+const MOD_POLL_STALE_MS = 15_000;
+
+/** True only while events can flow end to end: Takaro identified us and the mod is polling. */
+export function bridgeHealthy(identified: boolean, wsConnected: boolean, lastPollMs: number | null, nowMs: number): boolean {
+  return identified && wsConnected && lastPollMs !== null && nowMs - lastPollMs < MOD_POLL_STALE_MS;
 }
 
 /**

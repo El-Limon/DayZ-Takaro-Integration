@@ -9,8 +9,9 @@ import { parseSurvey } from '../dist/map/survey.js';
 import { prepareSurvey, renderFrameTile, isFrameTile, FRAME_TILE_SIZE, FRAME_MAX_ZOOM } from '../dist/map/render.js';
 import { PNG_SIGNATURE } from '../dist/map/png.js';
 import { MapService, MapTileError, parseFrameTileArgs, worldDisplayName } from '../dist/map/service.js';
-import { buildManifest, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
+import { buildManifest, withCharacter, withDimension, eventWithDimension, ACTION_CAPABILITIES } from '../dist/ws/capabilities.js';
 import { TakaroWsClient } from '../dist/ws/client.js';
+import { bridgeHealthy, slimArgs } from '../dist/local/server.js';
 
 // Same synthetic 1024 m world as map.test.mjs: sea in the south quarter, a 20x10 m building at (512, 512).
 function syntheticSurvey(world = 'testland') {
@@ -33,6 +34,26 @@ function syntheticSurvey(world = 'testland') {
   lines.push('S 0 sea_floor', 'S 1 cp_grass', 'S 2 cp_conifer_common1', 'S 3 asphalt_ext', 'end 1 80');
   return lines.join('\n') + '\n';
 }
+
+test('the manifest declares server-held characters that end on death', () => {
+  const entry = buildManifest(null).find((c) => c.name === 'players.characters');
+  assert.deepEqual(entry.parameters, { held: 'server', ends: ['death'] });
+  assert.equal(buildManifest(null).some((c) => c.name === 'players.progression'), false);
+});
+
+test('flat mod character fields become one character object', () => {
+  const player = { gameId: '1', name: 'Limon', characterId: '1_2_3_4', characterName: 'Linda' };
+  assert.deepEqual(withCharacter(player), { gameId: '1', name: 'Limon', character: { id: '1_2_3_4', name: 'Linda' } });
+});
+
+test('a player with no character id gets no character member', () => {
+  const offline = { gameId: '1', name: 'Limon', characterId: '', characterName: '' };
+  assert.deepEqual(withCharacter(offline), { gameId: '1', name: 'Limon' });
+});
+
+test('a character without a name falls back to the player name', () => {
+  assert.deepEqual(withCharacter({ name: 'Limon', characterId: 'x', characterName: '' }).character, { id: 'x', name: 'Limon' });
+});
 
 const px = (rgba, x, y) => Array.from(rgba.slice((y * FRAME_TILE_SIZE + x) * 4, (y * FRAME_TILE_SIZE + x) * 4 + 4));
 const BUILDING = [112, 92, 84, 255];
@@ -101,7 +122,7 @@ test('manifest: every mod action and event, plus the map once surveyed', () => {
   const names = buildManifest(null).map((c) => c.name);
   assert.ok(names.includes('players.location') && names.includes('events.player-death'));
   assert.ok(!names.includes('map'));
-  assert.equal(names.length, ACTION_CAPABILITIES.length + 6);
+  assert.equal(names.length, ACTION_CAPABILITIES.length + 6 + 1);
   const dim = { id: 'chernarusplus' };
   const map = buildManifest(dim).find((c) => c.name === 'map');
   assert.deepEqual(map, { name: 'map', parameters: { dimensions: [dim] } });
@@ -218,4 +239,27 @@ test('TAKARO_PROTOCOL=0 sends the old identify', async () => {
   assert.deepEqual(identify.payload, { identityToken: 'i', registrationToken: 'r', name: 'n' });
   client.shutdown();
   takaro.wss.close();
+});
+
+test('flat and nested player ids reach the mod as the same gameId', () => {
+  const nested = JSON.parse(slimArgs(JSON.stringify({ player: { gameId: '7656', roles: ['x'] }, reason: 'r' })));
+  assert.deepEqual(nested, { player: { gameId: '7656' }, reason: 'r' });
+  const flat = JSON.parse(slimArgs(JSON.stringify({ gameId: '7656', playerId: 'p', gameServerId: 'g', roles: [] })));
+  assert.deepEqual(flat, { gameId: '7656' });
+});
+
+test('args without a player pass through in every encoding', () => {
+  assert.equal(slimArgs('[]'), '[]');
+  assert.equal(slimArgs('{}'), '{}');
+  assert.equal(slimArgs('{"message":"hi"}'), '{"message":"hi"}');
+  assert.equal(slimArgs('not json'), 'not json');
+});
+
+test('health is ok only while Takaro is connected and the mod is polling', () => {
+  const now = 100_000;
+  assert.equal(bridgeHealthy(true, true, now - 1_000, now), true);
+  assert.equal(bridgeHealthy(true, true, now - 60_000, now), false);
+  assert.equal(bridgeHealthy(true, true, null, now), false);
+  assert.equal(bridgeHealthy(false, true, now - 1_000, now), false);
+  assert.equal(bridgeHealthy(true, false, now - 1_000, now), false);
 });
