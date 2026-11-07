@@ -57,7 +57,7 @@ Every file key can also be set from the environment, and the environment wins. W
 | `DAYZ_LOG_DIR` | | Server profiles directory. When set, new RPT and script log lines are sent as Takaro `log` events, and map tiles are drawn from `TakaroIntegration/map/<world>.survey` in it. |
 | `DAYZ_MAP_DIR` | | Directory with the mod's map survey, if it is not under `DAYZ_LOG_DIR`. |
 | `DAYZ_LOG_DENY` | | Comma-separated regexes of log lines to skip. |
-| `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `20`. |
+| `DAYZ_LOG_MAX_PER_SEC` | | Rate limit for `log` events. Default `10`. |
 | `TAKARO_PROTOCOL` | | `0` identifies with Takaro protocol version 0 only. By default the bridge offers versions 0 and 1 and Takaro picks one. |
 | `DEBUG` | | `1` logs every WebSocket frame, with tokens redacted. |
 
